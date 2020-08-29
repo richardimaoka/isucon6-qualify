@@ -68,33 +68,6 @@ object Web extends WebApp
     NotFound()
   }
 
-  post("/keyword")(withAuthorizedUserId { userId =>
-    val description = params.get("description").getOrElse("")
-    val result = for {
-      keyword <- params.get("keyword").filter(_.nonEmpty).toRight(BadRequest()).right
-      _ <- Either.cond(
-        isSpamContents(description) || isSpamContents(keyword),
-        BadRequest("SPAM!"),
-        Unit
-      ).swap.right
-    } yield {
-      DB.autoCommit { implicit session =>
-        sql"""
-          INSERT INTO entry (author_id, keyword, description, created_at, updated_at)
-          VALUES ($userId, $keyword, $description, NOW(), NOW())
-          ON DUPLICATE KEY UPDATE
-            author_id = VALUES(author_id),
-            keyword = VALUES(keyword),
-            description = VALUES(description),
-            created_at = created_at,
-            updated_at = VALUES(updated_at)
-        """.update.apply()
-      }
-      redirect(uriFor("/"))
-    }
-    result.merge
-  })
-
   get("/register")(withUserName { maybeUserName =>
     render("authenticate",
       "user" -> maybeUserName,
@@ -176,6 +149,57 @@ object Web extends WebApp
     result.merge
   })
 
+  post("/keyword")(withAuthorizedUserId { userId =>
+    val description = params.get("description").getOrElse("")
+    val result = for {
+      keyword <- params.get("keyword").filter(_.nonEmpty).toRight(BadRequest()).right
+      _ <- Either.cond(
+        isSpamContents(description) || isSpamContents(keyword),
+        BadRequest("SPAM!"),
+        Unit
+      ).swap.right
+    } yield {
+      val htmlify = htmlify(description)
+      DB.autoCommit { implicit session =>
+        sql"""
+          INSERT INTO entry (author_id, keyword, description, htmlify, created_at, updated_at)
+          VALUES ($userId, $keyword, $description, $htmlify, NOW(), NOW())
+          ON DUPLICATE KEY UPDATE
+            author_id = VALUES(author_id),
+            keyword = VALUES(keyword),
+            description = VALUES(description),
+            htmlify = VALUES(htmlify),
+            created_at = created_at,
+            updated_at = VALUES(updated_at)
+        """.update.apply()
+      }
+      redirect(uriFor("/"))
+    }
+    result.merge
+  })
+
+  patch("/keyword/:keyword")(withAuthorizedUserId { userId =>
+    val result = for {
+      keyword <- params.get("keyword").toRight(BadRequest()).right
+      entity <- DB.readOnly { implicit session =>
+        sql"""
+          SELECT * FROM entry
+          WHERE keyword = $keyword
+        """.map(asEntry).single.apply()
+      }.toRight(NotFound()).right
+    } yield {
+      val htmlify = htmlify(entity.description)
+      DB.autoCommit { implicit session =>
+        sql"""
+          UPDATE entry SET htmlify = '$htmlify'
+          WHERE keyword = $keyword
+        """.update.apply()
+      }
+      redirect(uriFor("/"))      
+    }
+    result.merge
+  })
+  
   post("/keyword/:keyword")(withAuthorizedUserId { _ =>
     val result = for {
       keyword <- params.get("keyword").toRight(BadRequest()).right
@@ -224,7 +248,26 @@ object Web extends WebApp
     }
 
   def htmlify(content: String): String = {
-    "aaaaaaa"
+    val entries = DB.readOnly { implicit session =>
+      sql"""
+        SELECT * FROM entry
+        ORDER BY CHARACTER_LENGTH(keyword) DESC
+      """.map(asEntry).list.apply()
+    }
+    val regex =
+      entries.map(e => Pattern.quote(e.keyword)).mkString("(", "|", ")").r
+    val hashBuilder = Map.newBuilder[String, String]
+    val escaped = regex.replaceAllIn(content, m => {
+      val kw = m.group(1)
+      val hash = s"isuda_${sha1Hex(kw)}"
+      hashBuilder += kw -> hash
+      hash
+    }).htmlEscaped
+    hashBuilder.result.foldLeft(escaped) { case (content, (kw, hash)) =>
+      val url = s"/keyword/${kw.uriEncoded}"
+      val link = s"""<a href="$url">${kw.htmlEscaped}</a>"""
+      content.replaceAllLiterally(hash, link)
+    }.replaceAllLiterally("\n", "<br />\n")
   }
 
   def loadStars(keyword: String): Seq[Model.Star] = {

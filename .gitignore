@@ -1,2 +1,4 @@
 .metals
 .vscode
+template.html
+template-*.html
