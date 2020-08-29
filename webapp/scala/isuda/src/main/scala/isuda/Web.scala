@@ -224,7 +224,26 @@ object Web extends WebApp
     }
 
   def htmlify(content: String): String = {
-    "aaaaaaa"
+    val entries = DB.readOnly { implicit session =>
+      sql"""
+        SELECT * FROM entry
+        ORDER BY CHARACTER_LENGTH(keyword) DESC
+      """.map(asEntry).list.apply()
+    }
+    val regex =
+      entries.map(e => Pattern.quote(e.keyword)).mkString("(", "|", ")").r
+    val hashBuilder = Map.newBuilder[String, String]
+    val escaped = regex.replaceAllIn(content, m => {
+      val kw = m.group(1)
+      val hash = s"isuda_${sha1Hex(kw)}"
+      hashBuilder += kw -> hash
+      hash
+    }).htmlEscaped
+    hashBuilder.result.foldLeft(escaped) { case (content, (kw, hash)) =>
+      val url = s"/keyword/${kw.uriEncoded}"
+      val link = s"""<a href="$url">${kw.htmlEscaped}</a>"""
+      content.replaceAllLiterally(hash, link)
+    }.replaceAllLiterally("\n", "<br />\n")
   }
 
   def loadStars(keyword: String): Seq[Model.Star] = {
