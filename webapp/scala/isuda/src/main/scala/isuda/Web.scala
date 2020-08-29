@@ -144,10 +144,10 @@ object Web extends WebApp
       }.toRight(NotFound()).right
       
     } yield {
-      val htmlify = htmlify(entry.description)
+      val htmlifyStr = htmlify(entry.description)
       DB.autoCommit { implicit session =>
         sql"""
-          UPDATE entry SET htmlify = '$htmlify'
+          UPDATE entry SET htmlify = '$htmlifyStr'
           WHERE keyword = $keyword
         """.update.apply()
       }
@@ -170,11 +170,11 @@ object Web extends WebApp
         Unit
       ).swap.right
     } yield {
-      val htmlify = htmlify(description)
+      val htmlifyStr = htmlify(description)
       DB.autoCommit { implicit session =>
         sql"""
           INSERT INTO entry (author_id, keyword, description, htmlify, created_at, updated_at)
-          VALUES ($userId, $keyword, $description, $htmlify, NOW(), NOW())
+          VALUES ($userId, $keyword, $description, $htmlifyStr, NOW(), NOW())
           ON DUPLICATE KEY UPDATE
             author_id = VALUES(author_id),
             keyword = VALUES(keyword),
