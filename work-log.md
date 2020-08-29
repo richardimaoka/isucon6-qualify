@@ -442,3 +442,22 @@ mysql> select * from entry limit 1;
 - 2) リンク作成済みのHTML化テキストをデータベースに予め保存しておく
 
 2)の方がISUCON的には正攻法ですかね…？
+
+とりあえず2の方針でテーブルにhtmlifyカラムを足してみます。
+
+mysql> ALTER TABLE entry ADD COLUMN htmlify MEDIUMTEXT;
+Query OK, 0 rows affected (0.12 sec)
+Records: 0  Duplicates: 0  Warnings: 0
+
+mysql> describe entry;
++-------------+-----------------+------+-----+---------+----------------+
+| Field       | Type            | Null | Key | Default | Extra          |
++-------------+-----------------+------+-----+---------+----------------+
+| id          | bigint unsigned | NO   | PRI | NULL    | auto_increment |
+| author_id   | bigint unsigned | NO   |     | NULL    |                |
+| keyword     | varchar(191)    | YES  | UNI | NULL    |                |
+| description | mediumtext      | YES  |     | NULL    |                |
+| updated_at  | datetime        | NO   |     | NULL    |                |
+| created_at  | datetime        | NO   |     | NULL    |                |
+| htmlify     | mediumtext      | YES  |     | NULL    |                |
++-------------+-----------------+------+-----+---------+----------------+
