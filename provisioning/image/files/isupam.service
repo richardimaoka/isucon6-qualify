@@ -2,9 +2,9 @@
 Description = isupam is an isucon6 qualifier sub application
 
 [Service]
-WorkingDirectory=/home/isucon/
+WorkingDirectory=/home/isucon/isucon6-qualify/
 
-ExecStart = /home/isucon/bin/isupam -p 5050
+ExecStart = /home/isucon/isucon6-qualify/webapp/bin/isupam -p 5050
 
 Restart   = always
 Type      = simple
