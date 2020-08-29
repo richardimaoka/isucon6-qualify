@@ -68,33 +68,6 @@ object Web extends WebApp
     NotFound()
   }
 
-  post("/keyword")(withAuthorizedUserId { userId =>
-    val description = params.get("description").getOrElse("")
-    val result = for {
-      keyword <- params.get("keyword").filter(_.nonEmpty).toRight(BadRequest()).right
-      _ <- Either.cond(
-        isSpamContents(description) || isSpamContents(keyword),
-        BadRequest("SPAM!"),
-        Unit
-      ).swap.right
-    } yield {
-      DB.autoCommit { implicit session =>
-        sql"""
-          INSERT INTO entry (author_id, keyword, description, created_at, updated_at)
-          VALUES ($userId, $keyword, $description, NOW(), NOW())
-          ON DUPLICATE KEY UPDATE
-            author_id = VALUES(author_id),
-            keyword = VALUES(keyword),
-            description = VALUES(description),
-            created_at = created_at,
-            updated_at = VALUES(updated_at)
-        """.update.apply()
-      }
-      redirect(uriFor("/"))
-    }
-    result.merge
-  })
-
   get("/register")(withUserName { maybeUserName =>
     render("authenticate",
       "user" -> maybeUserName,
@@ -173,6 +146,33 @@ object Web extends WebApp
       "user" -> maybeUserName,
       "entry" -> entry.toHash
     )
+    result.merge
+  })
+
+  post("/keyword")(withAuthorizedUserId { userId =>
+    val description = params.get("description").getOrElse("")
+    val result = for {
+      keyword <- params.get("keyword").filter(_.nonEmpty).toRight(BadRequest()).right
+      _ <- Either.cond(
+        isSpamContents(description) || isSpamContents(keyword),
+        BadRequest("SPAM!"),
+        Unit
+      ).swap.right
+    } yield {
+      DB.autoCommit { implicit session =>
+        sql"""
+          INSERT INTO entry (author_id, keyword, description, created_at, updated_at)
+          VALUES ($userId, $keyword, $description, NOW(), NOW())
+          ON DUPLICATE KEY UPDATE
+            author_id = VALUES(author_id),
+            keyword = VALUES(keyword),
+            description = VALUES(description),
+            created_at = created_at,
+            updated_at = VALUES(updated_at)
+        """.update.apply()
+      }
+      redirect(uriFor("/"))
+    }
     result.merge
   })
 
