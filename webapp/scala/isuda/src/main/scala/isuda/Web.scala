@@ -239,11 +239,19 @@ object Web extends WebApp
       hashBuilder += kw -> hash
       hash
     }).htmlEscaped
-    hashBuilder.result.foldLeft(escaped) { case (content, (kw, hash)) =>
+
+    println("escaped")
+    println(escaped)
+
+    val htmlifyResult = hashBuilder.result.foldLeft(escaped) { case (content, (kw, hash)) =>
       val url = s"/keyword/${kw.uriEncoded}"
       val link = s"""<a href="$url">${kw.htmlEscaped}</a>"""
       content.replaceAllLiterally(hash, link)
     }.replaceAllLiterally("\n", "<br />\n")
+
+    println("htmlifyResult")
+    println(htmlifyResult)
+    htmlifyResult
   }
 
   def loadStars(keyword: String): Seq[Model.Star] = {

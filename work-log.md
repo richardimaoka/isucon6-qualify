@@ -314,3 +314,33 @@ SELECT * FROM entry
 ```        
 
 mustache周りを改善すれば、レスポンスタイムが向上してスコアが上がりそうですね。取り掛かってみましょう。
+
+## 6:25 最初のボトルネック特定？
+
+GET /keyword のたびによばれてるこれが長大なStringに対して正規表現を走らせているっぽいです。
+
+```scala
+  def htmlify(content: String): String = {
+    val entries = DB.readOnly { implicit session =>
+      sql"""
+        SELECT * FROM entry
+        ORDER BY CHARACTER_LENGTH(keyword) DESC
+      """.map(asEntry).list.apply()
+    }
+    val regex =
+      entries.map(e => Pattern.quote(e.keyword)).mkString("(", "|", ")").r
+    val hashBuilder = Map.newBuilder[String, String]
+    val escaped = regex.replaceAllIn(content, m => {
+      val kw = m.group(1)
+      val hash = s"isuda_${sha1Hex(kw)}"
+      hashBuilder += kw -> hash
+      hash
+    }).htmlEscaped
+    hashBuilder.result.foldLeft(escaped) { case (content, (kw, hash)) =>
+      val url = s"/keyword/${kw.uriEncoded}"
+      val link = s"""<a href="$url">${kw.htmlEscaped}</a>"""
+      content.replaceAllLiterally(hash, link)
+    }.replaceAllLiterally("\n", "<br />\n")
+  }
+```  
+
