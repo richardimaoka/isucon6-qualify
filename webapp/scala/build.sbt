@@ -45,7 +45,7 @@ lazy val isuda = (project in file("isuda")).
       "org.eclipse.jetty" % "jetty-plus"   % jettyVersion % "container",
       "org.scalikejdbc" %% "scalikejdbc" % "2.4.2",
       "org.scalikejdbc" %% "scalikejdbc-config" % "2.4.2",
-      "mysql" % "mysql-connector-java" % "6.0.3",
+      "mysql" % "mysql-connector-java" % "8.0.21",
       "ch.qos.logback" % "logback-classic" % "1.1.7"
     ),
 
@@ -100,7 +100,7 @@ lazy val isutar = (project in file("isutar")).
       "org.eclipse.jetty" % "jetty-plus"   % jettyVersion % "container",
       "org.scalikejdbc" %% "scalikejdbc" % "2.4.2",
       "org.scalikejdbc" %% "scalikejdbc-config" % "2.4.2",
-      "mysql" % "mysql-connector-java" % "6.0.3",
+      "mysql" % "mysql-connector-java" % "8.0.21",
       "ch.qos.logback" % "logback-classic" % "1.1.7"
     ),
     port in container.Configuration := isutarConfig.getInt("server.port"),
