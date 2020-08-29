@@ -142,10 +142,21 @@ object Web extends WebApp
           WHERE keyword = $keyword
         """.map(asEntry).single.apply()
       }.toRight(NotFound()).right
-    } yield render("keyword",
-      "user" -> maybeUserName,
-      "entry" -> entry.toHash
-    )
+      
+    } yield {
+      val htmlify = htmlify(entry.description)
+      DB.autoCommit { implicit session =>
+        sql"""
+          UPDATE entry SET htmlify = '$htmlify'
+          WHERE keyword = $keyword
+        """.update.apply()
+      }
+      
+      render("keyword",
+        "user" -> maybeUserName,
+        "entry" -> entry.toHash
+      )
+    }
     result.merge
   })
 
@@ -178,28 +189,6 @@ object Web extends WebApp
     result.merge
   })
 
-  patch("/keyword/:keyword")(withAuthorizedUserId { userId =>
-    val result = for {
-      keyword <- params.get("keyword").toRight(BadRequest()).right
-      entity <- DB.readOnly { implicit session =>
-        sql"""
-          SELECT * FROM entry
-          WHERE keyword = $keyword
-        """.map(asEntry).single.apply()
-      }.toRight(NotFound()).right
-    } yield {
-      val htmlify = htmlify(entity.description)
-      DB.autoCommit { implicit session =>
-        sql"""
-          UPDATE entry SET htmlify = '$htmlify'
-          WHERE keyword = $keyword
-        """.update.apply()
-      }
-      redirect(uriFor("/"))      
-    }
-    result.merge
-  })
-  
   post("/keyword/:keyword")(withAuthorizedUserId { _ =>
     val result = for {
       keyword <- params.get("keyword").toRight(BadRequest()).right
