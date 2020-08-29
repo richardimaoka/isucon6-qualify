@@ -189,3 +189,42 @@ SELECT * FROM entry
 
 
 ツールのインストールにだいぶ手間取ってしまいました。まだベンチマークの分析は続きますが、いったんここでgit commit
+
+
+[Netflix - Linux Performance Analysis in 60,000 Milliseconds](https://netflixtechblog.com/linux-performance-analysis-in-60-000-milliseconds-accc10403c55) に従って、ベンチマークを再び走らせながらリソースの利用を見ていきます。
+
+topコマンドから、PID=45710のjavaプロセス=isudaとPID=45627のmysqldがCPUを奪い合っているようですね。メモリSwapは発生しておらず、ボトルネックはCPUである可能性が高く、isudaプロセスがなにか重たいことをしているのかもしれません。
+    
+```
+> top
+top - 19:49:25 up 21:09,  2 users,  load average: 4.07, 0.98, 0.44
+Tasks: 125 total,   2 running,  71 sleeping,   0 stopped,   0 zombie
+%Cpu(s): 96.3 us,  2.2 sy,  0.0 ni,  1.3 id,  0.0 wa,  0.0 hi,  0.2 si,  0.0 st
+KiB Mem :  4017072 total,   577560 free,  2452560 used,   986952 buff/cache
+KiB Swap:        0 total,        0 free,        0 used.  1216348 avail Mem
+
+   PID USER      PR  NI    VIRT    RES    SHR S  %CPU %MEM     TIME+ COMMAND
+ 45710 isucon    20   0 3508996 1.176g  19336 S 169.0 30.7   3:18.21 java
+ 45627 mysql     20   0 1791972 460344  30912 S  21.3 11.5   0:59.63 mysqld
+ 45774 isucon    20   0 3440488 466436  17680 S   3.0 11.6   0:12.63 java
+ 13222 isucon    20   0   14492  10516   4912 S   2.7  0.3   0:08.11 isupam_linux
+  1822 root      20   0  222728  22232   7136 S   1.0  0.6   2:09.59 python3
+ 45228 www-data  20   0   24548   3136   1908 S   0.7  0.1   0:00.07 nginx
+ 45229 www-data  20   0   24524   3144   1908 S   0.3  0.1   0:00.07 nginx
+     1 root      20   0   37880   5812   3968 S   0.0  0.1   0:04.34 systemd
+     2 root      20   0       0      0      0 S   0.0  0.0   0:00.01 kthreadd
+     4 root       0 -20       0      0      0 I   0.0  0.0   0:00.00 kworker/0:0H
+```
+
+vmstatをみてもswapは発生していません。csつまりcontext switchの値も低いので、スレッド切り替えが忙しいタイプの詰まり方じゃなさそうです。context switchは数百万あってもアプリケーションによっては通常運転の場合もあったはず。
+
+```
+vmstat 1
+procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
+32  0      0 598848 164136 793832    0    0     0   132   90 1733 97  3  0  0  0
+ 2  0      0 613512 164144 793484    0    0     8   224  131 1823 97  2  1  0  0
+19  0      0 606584 164148 793568    0    0     0   108   99 1651 95  3  3  0  0
+```
+
+というわけで、isudaを中心に更に詳しく見ていき、なぜそれが複数のページのレスポンスに10秒以上かかるほど重くなっているのか見ていきましょう。
