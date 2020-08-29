@@ -159,14 +159,16 @@ object Web extends WebApp
         Unit
       ).swap.right
     } yield {
+      val htmlify = htmlify(description)
       DB.autoCommit { implicit session =>
         sql"""
-          INSERT INTO entry (author_id, keyword, description, created_at, updated_at)
-          VALUES ($userId, $keyword, $description, NOW(), NOW())
+          INSERT INTO entry (author_id, keyword, description, htmlify, created_at, updated_at)
+          VALUES ($userId, $keyword, $description, $htmlify, NOW(), NOW())
           ON DUPLICATE KEY UPDATE
             author_id = VALUES(author_id),
             keyword = VALUES(keyword),
             description = VALUES(description),
+            htmlify = VALUES(htmlify),
             created_at = created_at,
             updated_at = VALUES(updated_at)
         """.update.apply()
