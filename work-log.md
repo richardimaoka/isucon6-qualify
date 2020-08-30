@@ -461,3 +461,51 @@ mysql> describe entry;
 | created_at  | datetime        | NO   |     | NULL    |                |
 | htmlify     | mediumtext      | YES  |     | NULL    |                |
 +-------------+-----------------+------+-----+---------+----------------+
+
+
+## 10:00
+
+苦労して上記2)の方針でコードを書き換え、
+
+- entryテーブルにhtmlifyという作成済みHTMLを保存するカラムを追加
+- GET keywordが来たときに
+  - htmlifyが保存されていればそれを返す
+  - htmlifyが空ならhtmlifyを生成して返すと同時にDBに保存(GETでDB保存は気持ち悪いですが…)
+
+というコードを書いていて、ロジックの下記間違え対処や、バルクでcurlをはしらせて予めhtmlifyを保存する対応などをしていたのですが…何故か下記のエラーが出るように。
+このエラー、mysql-connector-jのバージョンが5.xでmysql-serverのバージョンが8.0のときによく出るエラーなんですが、今回どちらも8.0だし、直前まで動いていたのになぜ…。
+
+```
+Unable to load authentication plugin 'caching_sha2_password'.
+java.sql.SQLException: Unable to load authentication plugin 'caching_sha2_password'.
+
+
+at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:695)
+at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:663)
+at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:653)
+at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:638)
+at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:606)
+at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:624)
+at com.mysql.cj.jdbc.exceptions.SQLError.createSQLException(SQLError.java:620)
+at com.mysql.cj.jdbc.exceptions.SQLExceptionsMapping.translateException(SQLExceptionsMapping.java:78)
+at com.mysql.cj.jdbc.ConnectionImpl.createNewIO(ConnectionImpl.java:1663)
+at com.mysql.cj.jdbc.ConnectionImpl.<init>(ConnectionImpl.java:662)
+at com.mysql.cj.jdbc.ConnectionImpl.getInstance(ConnectionImpl.java:352)
+at com.mysql.cj.jdbc.NonRegisteringDriver.connect(NonRegisteringDriver.java:221)
+at java.sql.DriverManager.getConnection(DriverManager.java:664)
+at java.sql.DriverManager.getConnection(DriverManager.java:247)
+at org.apache.commons.dbcp2.DriverManagerConnectionFactory.createConnection(DriverManagerConnectionFactory.java:77)
+at org.apache.commons.dbcp2.PoolableConnectionFactory.makeObject(PoolableConnectionFactory.java:256)
+at org.apache.commons.pool2.impl.GenericObjectPool.create(GenericObjectPool.java:868)
+at org.apache.commons.pool2.impl.GenericObjectPool.borrowObject(GenericObjectPool.java:435)
+at org.apache.commons.pool2.impl.GenericObjectPool.borrowObject(GenericObjectPool.java:363)
+at org.apache.commons.dbcp2.PoolingDataSource.getConnection(PoolingDataSource.java:134)
+at scalikejdbc.Commons2ConnectionPool.borrow(Commons2ConnectionPool.scala:48)
+at scalikejdbc.DB$.readOnly(DB.scala:173)
+```
+
+エラーが出始める直前のスコア。Successは大幅に増えましたが、Failも増えたせいなのかスコアはゼロに戻ってしまいました…
+
+```
+{"pass":true,"score":0,"success":639,"fail":112,"messages":["Response code should be 200, got 500, data:  (GET /)","Response code should be 200, got 500, data:  (GET /keyword/613年)","Response code should be 400, got 500, data: 上座部仏教 (POST /keyword)","keyword: \"909年\" に \"10年\" へのリンクがありません (GET /keyword/909年)","keyword: \"917年\" に \"1003年\" へのリンクがありません (GET /keyword/917年)","keyword: \"Avex tune\" に \"13年\" へのリンクがありません (GET /keyword/Avex tune)","keyword: \"NYAOS\" に \"NYAOS\" へのリンクがありません (GET /keyword/NYAOS)","keyword: \"ノーンブワラムプー県\" に \"11年\" へのリンクがありません (GET /keyword/ノーンブワラムプー県)","keyword: \"ムニホヴォ・フラジシチェ\" に \"279年\" へのリンクがありません (GET /keyword/ムニホヴォ・フラジシチェ)","keyword: \"リトルシニア\" に \"10年\" へのリンクがありません (GET /keyword/リトルシニア)","keyword: \"個人協賛競 走\" に \"16年\" へのリンクがありません (GET /keyword/個人協賛競走)","keyword: \"出雲国風土記\" に \"11年\" へのリンクがありません (GET /keyword/出雲国 風土記)","keyword: \"博多南線\" に \"10年\" へのリンクがありません (GET /keyword/博多南線)","keyword: \"原ノ町駅\" に \"10年\" へのリンクがありません (GET /keyword/原ノ町駅)","keyword: \"和ジラ\" に \"5年\" へのリンクがありません (GET /keyword/和ジラ)","keyword: \"国際標準化機構\" に \"947年\" へのリン クがありません (GET /keyword/国際標準化機構)","keyword: \"岡山県道270号清音真金線\" に \"岡山県道270号清音真金線\" へのリンクがありません (GET /keyword/岡山県道270号清音真金線)","keyword: \"岩手県道220号氏子橋夕顔瀬線\" に \"45年\" へのリンクがありません (GET /keyword/岩手県道220号氏子橋夕顔瀬線)","keyword: \"島ひとみ\" に \"11年\" へのリンクがありません (GET /keyword/島ひとみ)","keyword: \"島根県道249号八重垣神社八雲線\" に \"島根県の県道一覧\" へのリンクがありません (GET /keyword/島根県道249号八重垣神社八雲線)","keyword: \"当用漢字\" に \"21年\" へのリンクがありません (GET /keyword/当用漢字)","keyword: \"志度駅\" に \"10年\" へのリンクがありません (GET /keyword/志度駅)","keyword: \"札内駅\" に \"12年\" へのリンクがありません (GET /keyword/札内駅)","keyword: \"東茨城郡\" に \"11年\" へのリンクがありません (GET /keyword/東茨城郡)","keyword: \"橋野真依子\" に \"4年\" へのリンクがありません (GET /keyword/橋野真依子)","keyword: \"河辺駅\" に \"11年\" へのリンクがありません (GET /keyword/河辺駅)","keyword: \"第一共和国 (オーストリア)\" に \"918年\" へ のリンクがありません (GET /keyword/第一共和国 (オーストリア))","keyword: \"豊橋閣日進禅寺\" に \"新川停留場\" からのリンクがありません (GET /keyword/新 川停留場)","keyword: \"魚津市農業協同組合\" に \"10年\" へのリンクがありません (GET /keyword/魚津市農業協同組合)","starがついていません (GET /)","タカラジェンヌ に 937年 へのリンクがありません (GET /)","リクエストがタイムアウトしました (GET /)","リクエストがタイムアウトしました (GET /keyword/495年)","リクエストがタイムアウトしました (GET /keyword/岩内郡)","リクエストがタイムアウトしました (POST /keyword)","リクエストがタイムアウトしました (POST /login)","リクエストがタイムアウトしました (POST /stars)","切通駅 に 10年 へのリンクがありません (GET /)","劇団カムカムミニキーナ に 10年 へのリンクがありませ ん (GET /)","吉富町 に 17年 へのリンクがありません (GET /)","済海寺 に 2年 へのリンクがありません (GET /)"]}
+```
