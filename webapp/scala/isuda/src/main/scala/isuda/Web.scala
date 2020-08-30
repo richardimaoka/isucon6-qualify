@@ -260,7 +260,7 @@ object Web extends WebApp
     }
 
     entry match {
-      case Some(entity) if !entity.htmlify.isEmpty => entity.htmlify
+      case Some(entity) if entity != null && entity.htmlify != null && !entity.htmlify.isEmpty => entity.htmlify
       case _ => {
         val htmlifyStr = htmlify(content)
         DB.autoCommit { implicit session =>
