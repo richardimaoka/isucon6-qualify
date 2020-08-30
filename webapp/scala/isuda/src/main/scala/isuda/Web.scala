@@ -142,16 +142,8 @@ object Web extends WebApp
           WHERE keyword = $keyword
         """.map(asEntry).single.apply()
       }.toRight(NotFound()).right
-      
+
     } yield {
-      val htmlifyStr = htmlify(entry.description)
-      DB.autoCommit { implicit session =>
-        sql"""
-          UPDATE entry SET htmlify = '$htmlifyStr'
-          WHERE keyword = $keyword
-        """.update.apply()
-      }
-      
       render("keyword",
         "user" -> maybeUserName,
         "entry" -> entry.toHash
@@ -259,6 +251,29 @@ object Web extends WebApp
     }.replaceAllLiterally("\n", "<br />\n")
   }
 
+  def htmlifyQuick(keyword: String, content: String): String = {
+    val entry = DB.readOnly { implicit session =>
+      sql"""
+        SELECT * FROM entry
+        WHERE keyword = $keyword
+      """.map(asEntry).single().apply()
+    }
+
+    entry match {
+      case Some(entity) if !entity.htmlify.isEmpty => entity.htmlify
+      case _ => {
+        val htmlifyStr = htmlify(content)
+        DB.autoCommit { implicit session =>
+          sql"""
+            UPDATE entry SET htmlify = $htmlifyStr
+            WHERE keyword = $keyword
+          """.update.apply()
+        }
+        htmlifyStr
+      }
+    }
+  }
+
   def loadStars(keyword: String): Seq[Model.Star] = {
     val origin = appConfig.getString("origin.isutar")
     val url = s"$origin/stars"
@@ -284,7 +299,7 @@ object Web extends WebApp
     def toHash: Map[String, Any] =
       toJSON(entry).extract[Map[String, Any]] ++ Map(
         "url" -> s"/keyword/${entry.keyword.uriEncoded}",
-        "html" -> htmlify(entry.description),
+        "html" -> htmlifyQuick(entry.keyword, entry.description),
         "stars" -> loadStars(entry.keyword).map(s => Map("star" -> s))
       )
   }
@@ -294,6 +309,7 @@ object Web extends WebApp
     rs.get[Long]("author_id"),
     rs.get[String]("keyword"),
     rs.get[String]("description"),
+    rs.get[String]("htmlify"),
     rs.get[LocalDateTime]("updated_at"),
     rs.get[LocalDateTime]("created_at")
   )
@@ -327,6 +343,7 @@ object Model {
     authorId: Long,
     keyword: String,
     description: String,
+    htmlify: String,
     updatedAt: LocalDateTime,
     createdAt: LocalDateTime
   )
