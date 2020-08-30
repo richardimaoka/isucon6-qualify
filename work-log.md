@@ -524,3 +524,121 @@ at scalikejdbc.DB$.readOnly(DB.scala:173)
 2020/08/30 10:32:20 benchmarking finished
 {"pass":true,"score":0,"success":838,"fail":58,"messages":["リクエストがタイムアウトしました (GET /)","リクエストがタイムアウトしました (GET /keyword/城野駅 (北九州高速鉄道))","リクエストがタイムアウトしました (GET /keyword/潜水指定船)","リクエストがタイムアウトしました (GET /keyword/祥興帝)","リクエス トがタイムアウトしました (POST /keyword)","リクエストがタイムアウトしました (POST /stars)"]}
 ```
+
+
+## 10:50 Cannot get a connection? 
+
+まだまだisudaプロセスのCPU仕様がボトルネックになっている(おそらくhtmlifyの正規表現？)なので、残り時間を考えてスコア改善は難しそうですね。
+
+```
+top - 01:51:49 up 1 day,  3:11,  3 users,  load average: 4.82, 9.38, 6.79
+Tasks: 135 total,   1 running,  75 sleeping,   4 stopped,   0 zombie
+%Cpu(s): 96.0 us,  1.8 sy,  0.0 ni,  1.7 id,  0.0 wa,  0.0 hi,  0.5 si,  0.0 st
+KiB Mem :  4017072 total,   741640 free,  2399780 used,   875652 buff/cache
+KiB Swap:        0 total,        0 free,        0 used.  1233796 avail Mem
+
+   PID USER      PR  NI    VIRT    RES    SHR S  %CPU %MEM     TIME+ COMMAND
+119110 isucon    20   0 3521904 1.158g  19192 S 131.2 30.2   3:40.97 java
+ 45627 mysql     20   0 1794620 486196  14788 S  31.2 12.1  19:52.11 mysqld
+ 45774 isucon    20   0 3448856 412960  13932 S  26.2 10.3   2:34.92 java
+ 13222 isucon    20   0   14492   8796   2608 S   6.0  0.2   0:27.95 isupam_linux
+ 54672 www-data  20   0   24536   3188   1932 S   0.3  0.1   0:03.76 nginx
+     1 root      20   0  119808   5508   3632 S   0.0  0.1   0:05.59 systemd
+     2 root      20   0       0      0      0 S   0.0  0.0   0:00.01 kthreadd
+     4 root       0 -20       0      0      0 I   0.0  0.0   0:00.00 kworker/0:0H
+```    
+
+
+そもそも重い処理(1ページ辺り数秒)を7500ものキーワードに対して走らせ、それをDBに格納するというのは完全に作戦ミスでした。
+計算すれば一件あたり5秒だとしても、7500x5秒かかるので、どう考えても時間が足りないのですけどんな単純なことも見落とすものですね…
+
+なんどかベンチマーカーを走らせるとsuccessの数は増えてきているものの、格納済みのhtmlifyに当たる確率が低いためか、failも多くスコアはあがらないですね。
+
+```
+{"pass":true,"score":0,"success":970,"fail":87,"messages":["Response code should be 200, got 404, data:  (POST /stars)","Response code should be 200, got 500, data:  (GET /)","Response code should be 200, got 500, data:  (GET /keyword/1008年)","Response code should be 200, got 500, data:  (GET /keyword/エッセンス)","Response code should be 200, got 500, data:  (GET /keyword/池田政員)","Response code should be 302, got 500, data:  (POST /login)","Response code should be 302, got 500, data: トイズ (POST /keyword)","Response code should be 302, got 500, data: 作曲賞 (POST /keyword)","Response code should be 302, got 500, data: 普門院 (POST /keyword)","Response code should be 302, got 500, data: 空印寺 (POST /keyword)","starがついていません (GET /)","リ クエストがタイムアウトしました (GET /)","リクエストがタイムアウトしました (POST /keyword)","大前駅 は既に表示されています (GET /)"]}
+```
+
+でもタイムアウトだけじゃなくHTTP 500が増えてきた…なんだろうこれは？
+
+
+うむむむ、GC overhead limit exceeded…
+
+```
+> journalctl -u isuda.scala.service  
+Aug 30 01:46:06 isucon6-webapp java[110422]: java.lang.OutOfMemoryError: GC overhead limit exceeded
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at java.util.Arrays.copyOf(Arrays.java:3332)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at java.lang.StringCoding.safeTrim(StringCoding.java:89)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at java.lang.StringCoding.access$100(StringCoding.java:50)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at java.lang.StringCoding$StringDecoder.decode(StringCoding.java:154)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at java.lang.StringCoding.decode(StringCoding.java:193)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at java.lang.String.<init>(String.java:426)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at com.mysql.cj.util.StringUtils.toString(StringUtils.java:1695)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at com.mysql.cj.result.StringValueFactory.createFromBytes(StringValueFactory.java:129)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at com.mysql.cj.result.StringValueFactory.createFromBytes(StringValueFactory.java:48)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at com.mysql.cj.protocol.a.MysqlTextValueDecoder.decodeByteArray(MysqlTextValueDecoder.java:134)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at com.mysql.cj.protocol.result.AbstractResultsetRow.decodeAndCreateReturnValue(AbstractResultsetRow.java:133)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at com.mysql.cj.protocol.result.AbstractResultsetRow.getValueFromBytes(AbstractResultsetRow.java:241)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at com.mysql.cj.protocol.a.result.TextBufferRow.getValue(TextBufferRow.java:132)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at com.mysql.cj.jdbc.result.ResultSetImpl.getString(ResultSetImpl.java:850)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at com.mysql.cj.jdbc.result.ResultSetImpl.getString(ResultSetImpl.java:863)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at org.apache.commons.dbcp2.DelegatingResultSet.getString(DelegatingResultSet.java:267)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at org.apache.commons.dbcp2.DelegatingResultSet.getString(DelegatingResultSet.java:267)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at scalikejdbc.DBConnectionAttributesWiredResultSet.getString(DBConnectionAttributesWiredResultSet.scala:227)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at scalikejdbc.Binders$$anonfun$51.apply(Binders.scala:151)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at scalikejdbc.Binders$$anonfun$51.apply(Binders.scala:151)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at scalikejdbc.Binders$$anon$2.apply(Binders.scala:35)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at scalikejdbc.WrappedResultSet$$anonfun$get$2.apply(WrappedResultSet.scala:469)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at scalikejdbc.WrappedResultSet.wrapIfError(WrappedResultSet.scala:26)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at scalikejdbc.WrappedResultSet.get(WrappedResultSet.scala:469)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at isuda.Web$.asEntry(Web.scala:311)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at isuda.Web$$anonfun$43$$anonfun$44.apply(Web.scala:236)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at isuda.Web$$anonfun$43$$anonfun$44.apply(Web.scala:236)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at scala.collection.TraversableLike$$anonfun$map$1.apply(TraversableLike.scala:234)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at scala.collection.TraversableLike$$anonfun$map$1.apply(TraversableLike.scala:234)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at scalikejdbc.ResultSetTraversable$$anonfun$foreach$1.apply(ResultSetTraversable.scala:21)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at scalikejdbc.ResultSetTraversable$$anonfun$foreach$1.apply(ResultSetTraversable.scala:18)
+Aug 30 01:46:06 isucon6-webapp java[110422]:         at scalikejdbc.LoanPattern$class.using(LoanPattern.scala:18)
+Aug 30 01:46:44 isucon6-webapp java[110422]: 01:46:44.633 [qtp134310351-97] ERROR s.StatementExecutor$$anon$1 - SQL execution failed (Reason: GC overhead limit exceeded):
+Aug 30 01:46:44 isucon6-webapp java[110422]:    SELECT * FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC
+Aug 30 01:46:46 isucon6-webapp java[110422]: 01:46:46.350 [qtp134310351-90] WARN  o.e.jetty.servlet.ServletHandler - Error for /keyword/???
+Aug 30 01:46:46 isucon6-webapp java[110422]: java.lang.OutOfMemoryError: GC overhead limit exceeded
+Aug 30 01:46:46 isucon6-webapp java[110422]: 01:46:46.863 [qtp134310351-47] WARN  o.e.jetty.servlet.ServletHandler - Error for /keyword/????????
+Aug 30 01:46:46 isucon6-webapp java[110422]: java.lang.OutOfMemoryError: GC overhead limit exceeded
+Aug 30 01:47:19 isucon6-webapp java[110422]: 01:47:19.551 [qtp134310351-13] ERROR s.StatementExecutor$$anon$1 - SQL execution failed (Reason: GC overhead limit exceeded):
+Aug 30 01:47:19 isucon6-webapp java[110422]:    SELECT * FROM entry ORDER BY CHARACTER_LENGTH(keyword) DESC
+Aug 30 01:47:20 isucon6-webapp java[110422]: 01:47:20.282 [qtp134310351-79] WARN  o.e.jetty.servlet.ServletHandler - Error for /keyword/???
+Aug 30 01:47:20 isucon6-webapp java[110422]: java.lang.OutOfMemoryError: GC overhead limit exceeded
+Aug 30 01:47:23 isucon6-webapp java[110422]: 01:47:23.018 [qtp134310351-100] WARN  o.e.jetty.servlet.ServletHandler - Error for /keyword/????????????????
+Aug 30 01:47:23 isucon6-webapp java[110422]: java.lang.OutOfMemoryError: GC overhead limit exceeded
+Aug 30 01:47:23 isucon6-webapp java[110422]: 01:47:23.247 [qtp134310351-51] WARN  o.e.jetty.servlet.ServletHandler - Error for /keyword/????
+Aug 30 01:47:23 isucon6-webapp java[110422]: java.lang.OutOfMemoryError: GC overhead limit exceeded
+```
+
+そしてこれはnginxの統計。同じエンドポイントでMIN(htmlify保存済みと予想)とMAXの差が大きく開いてしまいました。
+
+```
++-------+-----+------+------+-----+-----+--------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+--------+--------+----------+--------+--------+--------+--------+--------+------------+------------+---------------+------------+
+| COUNT | 1XX | 2XX  | 3XX  | 4XX | 5XX | METHOD |                                                                                                                                                                                              URI                                                                                                                                                                                              |  MIN   |  MAX   |   SUM    |  AVG   |   P1   |  P50   |  P99   | STDDEV | MIN(BODY)  | MAX(BODY)  |   SUM(BODY)   | AVG(BODY)  |
++-------+-----+------+------+-----+-----+--------+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+--------+--------+----------+--------+--------+--------+--------+--------+------------+------------+---------------+------------+
+|     7 |   0 |    3 |    0 |   0 |   4 | GET    | /keyword/1066\xE5\xB9\xB4                                                                                                                                                                                                                                                                                                                                                                     |  0.056 | 51.134 |   68.575 |  9.796 |  0.852 |  0.852 |  1.940 | 17.204 |   4344.000 |  20627.000 |     95540.000 |  13648.571 |
+|     7 |   0 |    3 |    0 |   0 |   4 | GET    | /keyword/1065\xE5\xB9\xB4                                                                                                                                                                                                                                                                                                                                                                     |  0.056 | 51.222 |   66.054 |  9.436 |  0.808 |  0.792 |  1.932 | 17.237 |   2968.000 |  20627.000 |     91412.000 |  13058.857 |
+|     7 |   0 |    3 |    0 |   0 |   4 | GET    | /keyword/1064\xE5\xB9\xB4                                                                                                                                                                                                                                                                                                                                                                     |  0.056 | 50.958 |   64.850 |  9.264 |  0.840 |  0.824 |  2.040 | 17.144 |   2740.000 |  20627.000 |     90728.000 |  12961.143 |
+|     7 |   0 |    3 |    0 |   0 |   4 | GET    | /keyword/1062\xE5\xB9\xB4                                                                                                                                                                                                                                                                                                                                                                     |  0.052 | 49.650 |   78.759 | 11.251 |  0.840 |  0.916 | 16.401 | 16.541 |   4096.000 |  21365.000 |     95534.000 |  13647.714 |
+|     7 |   0 |    3 |    0 |   0 |   4 | GET    | /keyword/1061\xE5\xB9\xB4                                                                                                                                                                                                                                                                                                                                                                     |  0.052 | 49.738 |   62.346 |  8.907 |  0.872 |  0.848 |  2.256 | 16.750 |   2813.000 |  20627.000 |     90947.000 |  12992.429 |
+|     7 |   0 |    3 |    0 |   0 |   4 | GET    | /keyword/1060\xE5\xB9\xB4                                                                                                                                                                                                                                                                                                                                                                     |  0.056 | 51.978 |   68.039 |  9.720 |  0.916 |  0.768 |  2.328 | 17.511 |   2860.000 |  20627.000 |     91088.000 |  13012.571 |
+```
+
+
+## 11:24 regxのオンメモリキャッシュ
+
+これはきいた！！こっちを先にやっておきべきでした。スコアがまであがりました。
+
+```
+ bench -target "http://10.0.1.4"
+2020/08/30 11:25:32 start pre-checking
+2020/08/30 11:25:36 pre-check finished and start main benchmarking
+2020/08/30 11:26:32 benchmarking finished
+{"pass":true,"score":3337,"success":2096,"fail":30,"messages":["keyword: \"CCE\" に \"海浜幕張駅\" からのリンクがありません (GET /keyword/海浜幕張駅)","keyword: \"G15\" に \"三菱・ランサー\" からのリンクがありません (GET /keyword/三菱・ランサー)","keyword: \"イドリース\" に \"1099年\" からのリンクがありません (GET /keyword/1099年)","keyword: \"ウーズ\" に \"共通祖先\" からのリンクがありません (GET /keyword/共通祖先)","keyword: \"トイズ\" に \"Sugar (韓国の音楽グループ)\" からのリンクがありません (GET /keyword/Sugar (韓国の音楽グループ))","keyword: \"レフラー\" に \"ロベルト・コッホ\" から のリンクがありません (GET /keyword/ロベルト・コッホ)","keyword: \"井上敏夫\" に \"国会議員一覧\" からのリンクがありません (GET /keyword/国会議員一覧)","keyword: \"八田小学校\" に \"梅迫駅\" からのリンクがありません (GET /keyword/梅迫駅)","keyword: \"加藤彰\" に \"日本の映画監督一覧\" からのリンク がありません (GET /keyword/日本の映画監督一覧)","keyword: \"北海道の再開発の一覧\" に \"帯広駅\" からのリンクがありません (GET /keyword/帯広駅)","keyword: \"北消防署\" に \"南森町駅\" からのリンクがありません (GET /keyword/南森町駅)","keyword: \"南蟹谷村\" に \"所属郡を変更した町村一覧\" からのリ ンクがありません (GET /keyword/所属郡を変更した町村一覧)","keyword: \"普門院\" に \"新白岡駅\" からのリンクがありません (GET /keyword/新白岡駅)","keyword: \"枇杷島橋\" に \"名鉄一宮線\" からのリンクがありません (GET /keyword/名鉄一宮線)","keyword: \"空印寺\" に \"酒井忠存\" からのリンクがありませ ん (GET /keyword/酒井忠存)","keyword: \"船戸山\" に \"亀田町 (新潟県)\" からのリンクがありません (GET /keyword/亀田町 (新潟県))","keyword: \"藪田村\" に \"氷見市\" からのリンクがありません (GET /keyword/氷見市)","keyword: \"行政教区\" に \"キングスタウン\" からのリンクがありません (GET /keyword/キングスタウン)","keyword: \"観音橋\" に \"茨戸川\" からのリンクがありません (GET /keyword/茨戸川)","keyword: \"輪状甲状筋\" に \"人間の筋肉の一覧\" からのリンクがありません (GET /keyword/人間の筋肉の一覧)","keyword: \"鞍掛山\" に \"玖珂町\" からのリンクがありません (GET /keyword/玖珂町)","リクエス トがタイムアウトしました (POST /keyword)","朝夷奈切通 は既に表示されています (GET /)","錦糸町 は既に表示されています (GET /)","高橋雄一 は既に表示さ れています (GET /)"]}
+```
+
+というわけで時間切れです
