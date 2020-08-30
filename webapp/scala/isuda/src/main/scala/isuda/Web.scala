@@ -3,7 +3,9 @@ package isuda
 import com.typesafe.config.ConfigFactory
 import java.security.{MessageDigest, SecureRandom}
 import java.util.regex.Pattern
+
 import org.joda.time.LocalDateTime
+
 import scala.util.{Random, Try}
 import scala.util.control.Exception.catching
 import scalikejdbc.{DB, WrappedResultSet}
@@ -13,14 +15,28 @@ import skinny.micro.{ActionResult, BadRequest, Forbidden, NotFound, Ok, WebApp}
 import skinny.micro.contrib.json4s.JSONSupport
 import skinny.http
 
+import scala.util.matching.Regex
+
 object Web extends WebApp
-    with Static
-    with Session.Cookie
-    with Template
-    with JSONSupport {
+  with Static
+  with Session.Cookie
+  with Template
+  with JSONSupport {
   import Util.{sha1Hex, StringConversion}
 
   final val PerPage = 10
+
+  var builtRegX: Regex = null
+
+  def buildRegX = {
+    val entries = DB.readOnly { implicit session =>
+      sql"""
+        SELECT * FROM entry
+        ORDER BY CHARACTER_LENGTH(keyword) DESC
+      """.map(asEntry).list.apply()
+    }
+    entries.map(e => Pattern.quote(e.keyword)).mkString("(", "|", ")").r
+  }
 
   get("/initialize") {
     DB.autoCommit { implicit session =>
@@ -229,16 +245,12 @@ object Web extends WebApp
     }
 
   def htmlify(content: String): String = {
-    val entries = DB.readOnly { implicit session =>
-      sql"""
-        SELECT * FROM entry
-        ORDER BY CHARACTER_LENGTH(keyword) DESC
-      """.map(asEntry).list.apply()
+    if(builtRegX == null) {
+      builtRegX = buildRegX
     }
-    val regex =
-      entries.map(e => Pattern.quote(e.keyword)).mkString("(", "|", ")").r
+
     val hashBuilder = Map.newBuilder[String, String]
-    val escaped = regex.replaceAllIn(content, m => {
+    val escaped = builtRegX.replaceAllIn(content, m => {
       val kw = m.group(1)
       val hash = s"isuda_${sha1Hex(kw)}"
       hashBuilder += kw -> hash
