@@ -142,10 +142,13 @@ object Web extends WebApp
           WHERE keyword = $keyword
         """.map(asEntry).single.apply()
       }.toRight(NotFound()).right
-    } yield render("keyword",
-      "user" -> maybeUserName,
-      "entry" -> entry.toHash
-    )
+
+    } yield {
+      render("keyword",
+        "user" -> maybeUserName,
+        "entry" -> entry.toHash
+      )
+    }
     result.merge
   })
 
@@ -159,11 +162,11 @@ object Web extends WebApp
         Unit
       ).swap.right
     } yield {
-      val htmlify = htmlify(description)
+      val htmlifyStr = htmlify(description)
       DB.autoCommit { implicit session =>
         sql"""
           INSERT INTO entry (author_id, keyword, description, htmlify, created_at, updated_at)
-          VALUES ($userId, $keyword, $description, $htmlify, NOW(), NOW())
+          VALUES ($userId, $keyword, $description, $htmlifyStr, NOW(), NOW())
           ON DUPLICATE KEY UPDATE
             author_id = VALUES(author_id),
             keyword = VALUES(keyword),
@@ -178,28 +181,6 @@ object Web extends WebApp
     result.merge
   })
 
-  patch("/keyword/:keyword")(withAuthorizedUserId { userId =>
-    val result = for {
-      keyword <- params.get("keyword").toRight(BadRequest()).right
-      entity <- DB.readOnly { implicit session =>
-        sql"""
-          SELECT * FROM entry
-          WHERE keyword = $keyword
-        """.map(asEntry).single.apply()
-      }.toRight(NotFound()).right
-    } yield {
-      val htmlify = htmlify(entity.description)
-      DB.autoCommit { implicit session =>
-        sql"""
-          UPDATE entry SET htmlify = '$htmlify'
-          WHERE keyword = $keyword
-        """.update.apply()
-      }
-      redirect(uriFor("/"))      
-    }
-    result.merge
-  })
-  
   post("/keyword/:keyword")(withAuthorizedUserId { _ =>
     val result = for {
       keyword <- params.get("keyword").toRight(BadRequest()).right
@@ -270,6 +251,29 @@ object Web extends WebApp
     }.replaceAllLiterally("\n", "<br />\n")
   }
 
+  def htmlifyQuick(keyword: String, content: String): String = {
+    val entry = DB.readOnly { implicit session =>
+      sql"""
+        SELECT * FROM entry
+        WHERE keyword = $keyword
+      """.map(asEntry).single().apply()
+    }
+
+    entry match {
+      case Some(entity) if !entity.htmlify.isEmpty => entity.htmlify
+      case _ => {
+        val htmlifyStr = htmlify(content)
+        DB.autoCommit { implicit session =>
+          sql"""
+            UPDATE entry SET htmlify = $htmlifyStr
+            WHERE keyword = $keyword
+          """.update.apply()
+        }
+        htmlifyStr
+      }
+    }
+  }
+
   def loadStars(keyword: String): Seq[Model.Star] = {
     val origin = appConfig.getString("origin.isutar")
     val url = s"$origin/stars"
@@ -295,7 +299,7 @@ object Web extends WebApp
     def toHash: Map[String, Any] =
       toJSON(entry).extract[Map[String, Any]] ++ Map(
         "url" -> s"/keyword/${entry.keyword.uriEncoded}",
-        "html" -> htmlify(entry.description),
+        "html" -> htmlifyQuick(entry.keyword, entry.description),
         "stars" -> loadStars(entry.keyword).map(s => Map("star" -> s))
       )
   }
@@ -305,6 +309,7 @@ object Web extends WebApp
     rs.get[Long]("author_id"),
     rs.get[String]("keyword"),
     rs.get[String]("description"),
+    rs.get[String]("htmlify"),
     rs.get[LocalDateTime]("updated_at"),
     rs.get[LocalDateTime]("created_at")
   )
@@ -338,6 +343,7 @@ object Model {
     authorId: Long,
     keyword: String,
     description: String,
+    htmlify: String,
     updatedAt: LocalDateTime,
     createdAt: LocalDateTime
   )
